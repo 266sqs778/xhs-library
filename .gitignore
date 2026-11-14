@@ -1,0 +1,13 @@
+# 书的内容只在本地，不随 git 公开
+books/
+INDEX.md
+
+# 缓存
+__pycache__/
+*.pyc
+
+# 成书工作目录
+note/
+抽样页/
+样张/
+*.pdf
