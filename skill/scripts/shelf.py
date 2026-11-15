@@ -27,6 +27,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 DEFAULT_ROOT = r"C:\Users\无相道一\WorkBuddy\xhs-library"
@@ -50,10 +51,29 @@ def safe_name(s):
     return (s or "未命名")[:40]
 
 
+SHORT_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+
 def norm_id(v):
-    """链接或裸 ID → 笔记 ID。"""
-    m = re.search(r"([0-9a-fA-F]{20,32})", v or "")
-    return m.group(1).lower() if m else ""
+    """链接或裸 ID → 笔记 ID；xhslink 短链先跟随第一跳（GET，HEAD 可能 404）。"""
+    v = v or ""
+    m = re.search(r"([0-9a-fA-F]{20,32})", v)
+    if m:
+        return m.group(1).lower()
+    if "xhslink." in v:
+        try:
+            r = subprocess.run(
+                ["curl", "-s", "-D", "-", "-o", os.devnull, "--max-time", "25",
+                 "-A", SHORT_UA, v.strip()], capture_output=True, text=True)
+            for line in (r.stdout or "").splitlines():
+                if line.lower().startswith("location:"):
+                    m = re.search(r"([0-9a-fA-F]{20,32})", line.split(":", 1)[1])
+                    if m:
+                        return m.group(1).lower()
+        except OSError:
+            pass
+    return ""
 
 
 class Shelf:
