@@ -34,14 +34,19 @@ def sh(cmd, **kw):
 
 
 def resolve_url(url):
-    """短链（xhslink）跟随跳转，拿到带 note id 的正式地址。"""
-    if "xhslink.com" not in url:
+    """短链（xhslink.com / xhslink.cn）跟随第一跳，拿到带 note id 的正式地址。
+
+    必须用 GET 取响应头：部分短链对 HEAD 直接返回 404。
+    """
+    if "xhslink." not in url:
         return url
-    r = sh(["curl", "-sIL", "--max-time", "25", "-A", UA, url])
+    r = sh(["curl", "-s", "-D", "-", "-o", os.devnull,
+            "--max-time", "25", "-A", UA, url])
     loc = ""
     for line in (r.stdout or "").splitlines():
         if line.lower().startswith("location:"):
             loc = line.split(":", 1)[1].strip()
+            break
     return loc or url
 
 
