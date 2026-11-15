@@ -19,10 +19,15 @@ except ImportError:
     sys.exit("[FATAL] 需要 pymupdf：python -m pip install pymupdf")
 
 BAD_LINE_START = "，。！？；：、）》」』】〕”’"
+# 与书稿口径一致：略去平台表情代码与表情符号后再逐字比对
+EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F900-\U0001F9FF\uFE0F\u200D]+")
 
 
 def norm(s):
-    return re.sub(r"[\s\"「」“”]", "", re.sub(r"\[[^\]]+\]", "", s))
+    s = re.sub(r"\[[^\]]+\]", "", s)          # [笑哭R] 等平台表情代码
+    s = EMOJI_RE.sub("", s)                    # 🌿 ❤️ 😭 等表情符号
+    return re.sub(r"[\s\"「」“”]", "", s)
 
 
 def main():
@@ -93,12 +98,15 @@ def main():
                 corpus.append(sc.get("content") or "")
         pool = norm("".join(corpus))
         desc = norm((data.get("note") or {}).get("desc") or "")
-        miss = [q for q in quotes if norm(re.sub(r"\*\*|==", "", q)) not in pool]
+        # 「图即正文」型帖子：正文、评论、图版文字都是合法引文来源
+        pic_corpus = norm("".join(p_.replace("／", "") for p_ in pics))
+        all_corpus = pool + desc + pic_corpus
+        miss = [q for q in quotes if norm(re.sub(r"\*\*|==", "", q)) not in all_corpus]
         kmiss = [k for k in keys
-                 if norm(re.sub(r"\*\*|==", "", k)) not in desc
-                 and norm(re.sub(r"\*\*|==", "", k)) not in pool]
+                 if norm(re.sub(r"\*\*|==", "", k)) not in all_corpus]
         print("   评论引用 %d 条，未命中 %d 条" % (len(quotes), len(miss)))
-        print("   金句 %d 条，未命中 %d 条" % (len(keys), len(kmiss)))
+        print("   金句 %d 条，未命中 %d 条（比对语料含正文、评论与图版文字 %d 行）"
+              % (len(keys), len(kmiss), len(pics)))
         for q in miss:
             print("      MISS:", q[:46])
         for k in kmiss:
