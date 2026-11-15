@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""成书验收：标记残留、板块落地、引文逐字比对、行首标点、版权文案、目录书签、抽样页。
+"""成书验收：标记残留、板块落地、引文逐字比对、行首标点、版权文案、
+目录书签、二维码矩阵联系页、内容密度、抽样页。
 
 用法：
     python verify_book.py --pdf out.pdf --source book_source.txt [--data note_data.json] [--render 抽样目录]
+    python verify_book.py --pdf 历史书.pdf --source 旧稿.txt --no-contact   # 复核旧档时跳过联系页
 
 退出码非 0 表示有不通过项。
 """
 import argparse
+import collections
 import io
 import json
 import os
@@ -23,11 +26,81 @@ BAD_LINE_START = "，。！？；：、）》」』】〕”’"
 EMOJI_RE = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F900-\U0001F9FF\uFE0F\u200D]+")
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
 
 def norm(s):
     s = re.sub(r"\[[^\]]+\]", "", s)          # [笑哭R] 等平台表情代码
     s = EMOJI_RE.sub("", s)                    # 🌿 ❤️ 😭 等表情符号
     return re.sub(r"[\s\"「」“”]", "", s)
+
+
+def flat(s):
+    """PDF 文本会因 CJK 换行把词拆开（如「九紫离 / 火运」），比对前去所有空白。"""
+    return re.sub(r"\s+", "", s)
+
+
+def strip_markup(s):
+    return re.sub(r"\*\*|==", "", s)
+
+
+def source_lines(src):
+    """书稿里的原文照录片段（评论卡 / 引用 / 精髓 / 金句主句）。"""
+    quotes, keys, pics = [], [], []
+    for l in src.split("\n"):
+        t = l.strip()
+        if t.startswith(("@@CMT ", "@@STAR ")):
+            parts = t.split(" ", 1)[1].split("｜")
+            if len(parts) > 1:
+                quotes.append(parts[1].strip())
+        elif t.startswith("@@QUOTE ") or t.startswith("@@GEM "):
+            quotes.append(t.split(" ", 1)[1].strip())
+        elif t.startswith("@@KEY "):
+            keys.append(t[6:].split("｜", 1)[0].strip())
+        elif t.startswith("@@PIC "):
+            pics.append(t[6:].strip())
+    return quotes, keys, pics
+
+
+def density(src):
+    """按内容身份统计字数占比：原文 / 来源 / 编者议论 / 出处说明。
+
+    新格式（4 章 + @@CMT 评论卡）里，原文一律走标记，普通正文只会是
+    末章出处说明；旧格式把原文写在普通正文里，故旧格式不启用密度校验。
+    """
+    cat = collections.Counter()
+    for l in src.split("\n"):
+        t = l.strip()
+        if not t:
+            continue
+        if t.startswith(("@@CMT ", "@@STAR ")):
+            parts = [x.strip() for x in t.split(" ", 1)[1].split("｜", 2)]
+            cat["来源"] += len(parts[0])
+            cat["原文"] += len(parts[1]) if len(parts) > 1 else 0
+            if len(parts) > 2:
+                cat["编者议论"] += len(parts[2])
+        elif t.startswith("@@KEY "):
+            main, sep, by = t[6:].partition("｜")
+            cat["原文"] += len(main.strip())
+            if sep:
+                cat["来源"] += len(by.strip())
+        else:
+            m = re.match(r"^@@([A-Z0-9]+)\s*(.*)$", t)
+            if m:
+                k, body = m.group(1), m.group(2)
+                mp = {"NOTE": "编者议论", "LEAD": "编者议论", "POINT": "编者议论",
+                      "CAP": "编者议论", "H2": "编者议论", "QUOTE": "原文",
+                      "GEM": "原文", "PIC": "原文", "BY": "来源",
+                      "IMG": "来源", "RULE": None, "PAGE": None, "CONTACT": None}
+                bucket = mp.get(k, "编者议论")
+                if bucket:
+                    cat[bucket] += len(body)
+            elif re.match(r"^第[一二三四五六七八九十]+章", t) or t.startswith("附录"):
+                cat["编者议论"] += len(t)
+            else:
+                cat["出处说明"] += len(t)
+    return cat
 
 
 def main():
@@ -36,12 +109,17 @@ def main():
     ap.add_argument("--source", required=True)
     ap.add_argument("--data", help="采集产物 note_data.json，用于引文逐字比对")
     ap.add_argument("--render", help="抽样页输出目录")
+    ap.add_argument("--brand", default=os.path.join(ROOT, "assets", "brand", "brand.json"),
+                    help="品牌配置 brand.json")
+    ap.add_argument("--no-contact", action="store_true",
+                    help="复核历史归档时跳过二维码矩阵检查（正常成书不要用）")
     a = ap.parse_args()
 
     doc = pymupdf.open(a.pdf)
     pages = [p.get_text() for p in doc]
     text = "\n".join(pages)
     norm_text = norm(text)
+    flat_text = flat(text)
     src = io.open(a.source, encoding="utf-8").read()
     fails, warns = [], []
 
@@ -51,12 +129,13 @@ def main():
     if not doc.get_toc():
         fails.append("没有目录书签")
 
-    print("\n[1] 标记残留")
-    for kw in ("@@", "**", "==", "{{", "[[", "None", "插图缺失"):
+    print("\n[1] 标记残留与占位提示")
+    for kw in ("@@", "**", "==", "{{", "[[", "None", "插图缺失",
+               "品牌资源缺失", "二维码缺失", "解析失败"):
         n = text.count(kw)
-        print("   %-8s %d" % (kw, n))
+        print("   %-12s %d" % (kw, n))
         if n:
-            fails.append("残留标记 %s × %d" % (kw, n))
+            fails.append("残留标记／占位提示 %s × %d" % (kw, n))
 
     print("\n[2] 版权口径")
     if "国学经典" in text or "公版古籍" in text:
@@ -78,17 +157,17 @@ def main():
         fails.append("行首标点 %d 处" % len(bad))
 
     print("\n[4] 板块落地")
-    for kw, need in (("核 心 观 点", 1), ("图 版 文 字 · 照 录", 0), ("本册精选", 0),
-                     ("编者注｜", 0)):
+    for kw, need in (("核 心 观 点", 0), ("图 版 文 字 · 照 录", 0),
+                     ("本册精选", 0), ("编者注｜", 0)):
         n = text.count(kw)
-        print("   %-14s %d" % (kw, n))
+        print("   %-16s %d" % (kw, n))
         if need and n < need:
             fails.append("缺少板块：%s" % kw)
 
     print("\n[5] 引文逐字比对")
-    quotes = [m.group(1).strip() for m in re.finditer(r"^@@(?:QUOTE|GEM) (.+)$", src, re.M)]
-    keys = [m.group(1).strip() for m in re.finditer(r"^@@KEY (.+)$", src, re.M)]
-    pics = [m.group(1).strip() for m in re.finditer(r"^@@PIC (.+)$", src, re.M)]
+    quotes, keys, pics = source_lines(src)
+    lines = src.split("\n")
+    bare_quotes = 0
     if a.data:
         data = json.load(io.open(a.data, encoding="utf-8"))
         corpus = []
@@ -101,11 +180,10 @@ def main():
         # 「图即正文」型帖子：正文、评论、图版文字都是合法引文来源
         pic_corpus = norm("".join(p_.replace("／", "") for p_ in pics))
         all_corpus = pool + desc + pic_corpus
-        miss = [q for q in quotes if norm(re.sub(r"\*\*|==", "", q)) not in all_corpus]
-        kmiss = [k for k in keys
-                 if norm(re.sub(r"\*\*|==", "", k)) not in all_corpus]
+        miss = [q for q in quotes if norm(strip_markup(q)) not in all_corpus]
+        kmiss = [k for k in keys if norm(strip_markup(k)) not in all_corpus]
         print("   评论引用 %d 条，未命中 %d 条" % (len(quotes), len(miss)))
-        print("   金句 %d 条，未命中 %d 条（比对语料含正文、评论与图版文字 %d 行）"
+        print("   金句 %d 条，未命中 %d 条（语料含正文、评论与图版文字 %d 行）"
               % (len(keys), len(kmiss), len(pics)))
         for q in miss:
             print("      MISS:", q[:46])
@@ -113,6 +191,16 @@ def main():
             print("      MISS:", k[:46])
         if miss or kmiss:
             fails.append("引文与采集原文不一致（见上）")
+        # 只有「来自评论」的 QUOTE/GEM 才必须有 @@BY；
+        # 原帖正文、话题标签、图注用引用块照录时不该被当成评论署名缺失。
+        for i, l in enumerate(lines):
+            if l.strip().startswith(("@@QUOTE ", "@@GEM ")):
+                q = l.strip().split(" ", 1)[1]
+                from_comment = norm(strip_markup(q)) in pool
+                has_by = any(x.strip().startswith("@@BY ")
+                             for x in lines[max(0, i - 2):i])
+                if from_comment and not has_by:
+                    bare_quotes += 1
     else:
         print("   （未提供 --data，跳过逐字比对；建议补上）")
         warns.append("未做引文逐字比对")
@@ -121,11 +209,69 @@ def main():
         print("   图版文字：%s… → PDF 内%s" % (p_.replace("／", "/")[:18], "有" if ok else "缺"))
         if not ok:
             fails.append("图版文字未落入 PDF：%s" % p_[:24])
+    # 来源清晰度：金句必须自带署名；引用块必须有署名行
+    no_by = [k for k in re.findall(r"^@@KEY (.+)$", src, re.M) if "｜" not in k]
+    print("   金句缺署名 %d 条｜评论引用块缺署名 %d 条" % (len(no_by), bare_quotes))
+    if no_by or bare_quotes:
+        fails.append("有引文没带来源（金句 %d、引用块 %d）" % (len(no_by), bare_quotes))
+
+    print("\n[6] 联系页二维码矩阵")
+    if a.no_contact:
+        warns.append("已按 --no-contact 跳过联系页检查（仅限历史归档复核）")
+    elif not os.path.exists(a.brand):
+        fails.append("品牌配置缺失：%s" % a.brand)
+    else:
+        cfg = json.load(io.open(a.brand, encoding="utf-8"))
+        title = cfg.get("title", "")
+        hits = [i for i, t in enumerate(pages) if title in t or flat(title) in flat(t)]
+        if not hits:
+            fails.append("PDF 里找不到联系页「%s」" % title)
+        else:
+            i = hits[-1]
+            imgs = doc[i].get_images(full=True)
+            need = len(cfg.get("qr") or [])
+            print("   联系页 p%d｜内嵌二维码图片 %d 张（需要 %d 张）"
+                  % (i + 1, len(imgs), need))
+            if len(imgs) < need:
+                fails.append("二维码图片不足：%d/%d" % (len(imgs), need))
+        must = cfg.get("verify", {}).get("must_contain") or []
+        missing = [k for k in must if flat(k) not in flat_text]
+        print("   必含文案 %d 项，缺失 %d 项" % (len(must), len(missing)))
+        for k in missing:
+            print("      MISS:", k)
+        if missing:
+            fails.append("联系页文案缺失：%s" % "、".join(missing))
+        if "非原帖作者" not in flat_text:
+            fails.append("联系页未区分「整理者 ≠ 原帖作者」，版权口径不清")
+
+    print("\n[7] 内容密度（新格式书稿）")
+    if not re.search(r"^@@(CMT|STAR) ", src, re.M):
+        warns.append("旧格式书稿（无 @@CMT 评论卡），内容密度改用人工复核")
+    else:
+        cat = density(src)
+        tot = sum(cat.values()) or 1
+        for k in ("原文", "来源", "编者议论", "出处说明"):
+            print("   %-8s %5d 字 %5.1f%%" % (k, cat[k], 100 * cat[k] / tot))
+        note_chars = sum(len(m.group(1)) for m in
+                         re.finditer(r"^@@NOTE (.+)$", src, re.M))
+        note_ratio = note_chars / tot
+        talk_ratio = cat["编者议论"] / tot
+        meta_ratio = cat["出处说明"] / tot
+        print("   NOTE %.1f%%（上限 8%%）｜编者议论 %.1f%%（上限 15%%）｜出处说明 %.1f%%（上限 35%%）"
+              % (100 * note_ratio, 100 * talk_ratio, 100 * meta_ratio))
+        if note_ratio > 0.08:
+            fails.append("编者注占比 %.1f%% 超过 8%%" % (100 * note_ratio))
+        if talk_ratio > 0.15:
+            fails.append("编者议论占比 %.1f%% 超过 15%%" % (100 * talk_ratio))
+        if meta_ratio > 0.35:
+            fails.append("出处说明占比 %.1f%% 超过 35%%，元信息喧宾夺主" % (100 * meta_ratio))
+        if cat["原文"] / tot < 0.35:
+            fails.append("原文照录占比 %.1f%% 不足 35%%" % (100 * cat["原文"] / tot))
 
     if a.render:
         os.makedirs(a.render, exist_ok=True)
         for i, t in enumerate(pages):
-            if any(k in t for k in ("核 心 观 点", "图 版 文 字", "本册精选")):
+            if any(k in t for k in ("核 心 观 点", "图 版 文 字", "本册精选", "联 系 与 合 作")):
                 out = os.path.join(a.render, "p%02d.png" % (i + 1))
                 doc[i].get_pixmap(dpi=105).save(out)
         print("\n抽样页已输出到 %s" % a.render)

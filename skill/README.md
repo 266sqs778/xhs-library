@@ -1,11 +1,13 @@
-# 小红书精华小书 · Skill
+# 小红书精华小书 · Skill（v2.0）
 
-把一条小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）编成一本可读的 PDF 小书。
+把一条小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）编成一本**内容优先**的 PDF 小书，并归档进书架。
 
 - **采集**：公开分享页的移动端 SSR 数据，不登录、不调第三方付费接口
-- **精选**：原文照录 + 核心观点 + 金句 + 评论区精选 + 精髓特写
+- **精选**：原文照录 + 评论卡（自带来源）+ 金句（句句署名）+ 精髓特写
 - **排版**：小红书风格（白底珊瑚红、黑体正文、信息密度高），也能切宣纸宋体的书籍版式
-- **验收**：残留标记、引文逐字比对、行首标点、版权口径、目录书签、抽样页
+- **联系页**：每本末尾自动一页「联系与合作」三码矩阵 + 一小段说明 + 品牌关联
+- **验收**：残留标记、引文逐字比对、行首标点、版权口径、目录书签、**二维码矩阵与内容密度**、抽样页
+- **归档**：`shelf.py` 按笔记 ID 查重，每本一个文件夹，`INDEX.md` 总目录
 
 ## 安装
 
@@ -24,31 +26,53 @@ python -m pip install reportlab pymupdf fonttools
 
 中文字体需要系统里有宋体 / 黑体 / 楷体 / 仿宋（Windows 自带）。
 
-排版引擎不随仓库分发，默认复用已安装的 `ebook-pdf-maker` 技能（需要含 `--preset xhs` 的版本）。
-找不到时会依次回退到本目录 `vendor/book_pdf.py` 或环境变量 `XHS_BOOK_ENGINE` 指定的路径。
+**排版引擎随包分发**：`vendor/book_pdf.py` 已内含 `--preset xhs`、`@@CMT/@@STAR` 评论卡、
+`@@CONTACT` 联系页、中文标点禁则与分页保护，不需要额外安装 `ebook-pdf-maker`。
+查找顺序：`XHS_BOOK_ENGINE` 环境变量 → 本包 `vendor/` → 已安装的 `ebook-pdf-maker`。
+`build_book.py` 会校验引擎是否含 `@@CONTACT`，版本过旧直接报错，不会静默出缺页的书。
 
 ## 用法
 
 ```bash
+# 0. 查重
+python scripts/shelf.py check "<笔记链接或ID>"
+
 # 1. 采集
 python scripts/collect_note.py "https://www.xiaohongshu.com/discovery/item/xxxx" -o note/
 
-# 2. 按 FORMAT.md 写书稿（参考 templates/book_source_template.txt）
+# 2. 按 FORMAT.md 写书稿（四章结构，参考 templates/book_source_template.txt）
 
-# 3. 排版
+# 3. 排版（自动补 @@CONTACT 联系页）
 python scripts/build_book.py --source note/book_source.txt --title "书名" \
   --author "原作者" --intro "内容简介" -o note/书名.pdf
 
-# 4. 验收
+# 4. 验收（含二维码矩阵、来源、内容密度）
 python scripts/verify_book.py --pdf note/书名.pdf --source note/book_source.txt \
   --data note/note_data.json --render note/抽样页
 
-# 5. 查重 + 归档进书架
-python scripts/shelf.py check "<笔记链接或ID>"
+# 5. 归档进书架
 python scripts/shelf.py archive note/ --title "书名" --author "原作者" \
   --note-id "<笔记链接或ID>" --tags "标签" --brief "一句话简介" \
-  --pdf 书名.pdf --source book_source.txt --data note_data.json
+  --pdf 书名.pdf --source book_source.txt --data note_data.json \
+  --verify verify_report.txt --render 抽样页
 ```
+
+## 联系页与品牌资源
+
+`assets/brand/brand.json` 配文案与三张二维码，改文案、换码只改这个目录，不用碰引擎和书稿：
+
+```
+assets/brand/
+├── brand.json       标题 / 说明段落 / 三码标签 / 品牌行 / 页脚 / 验收关键词
+├── qr_weixin.jpg            冷石 · 微信
+├── qr_huangjinchen.jpg      老哥 · 黄金臣
+├── qr_lengshi_miaowu.jpg    冷石妙悟 · 模因公社
+└── README.md                字段说明与注意事项
+```
+
+书稿里**不写** `@@CONTACT` 也没关系：`build_book.py` 会生成同目录临时副本补上标记，排完删除。
+页脚固定保留「扫码联系的是整理者，非原帖作者」——书内正文是他人原创，不能让读者误以为码是原帖作者的。
+语气保持克制的一则说明，不写促销话术。
 
 ## 书架归档体系
 
@@ -66,7 +90,7 @@ xhs-library/                    整体一个包 = 一个 git 仓库
         ├── comments.md         评论人读版
         ├── images/ 样张/       原帖图 / 成书样张
         ├── verify_report.txt   验收日志
-        └── note.meta.md        归档卡片（书名、原作者、笔记ID、原帖地址、标签、版本）
+        └── note.meta.md        归档卡片
 ```
 
 - **命名**：`日期_书名_原作者`，自动清理 Windows 非法字符与 emoji
@@ -85,15 +109,19 @@ xhs-library/                    整体一个包 = 一个 git 仓库
 
 ```
 SKILL.md                        流程与硬规则（Agent 读这个）
-FORMAT.md                       书稿格式语言：标记总表、组合规则、SOP、验收清单
-templates/book_source_template.txt  书稿骨架
+FORMAT.md                       书稿格式语言：四章规范、标记总表、硬上限、验收清单
+README.md                       本文件
+templates/book_source_template.txt  四章书稿骨架
+assets/brand/                   品牌资源（brand.json + 三张二维码 + README）
+vendor/book_pdf.py              排版引擎（xhs preset、评论卡、联系页）
 scripts/collect_note.py         采集
-scripts/build_book.py           排版
-scripts/verify_book.py          验收
+scripts/build_book.py           排版（默认 xhs，自动补联系页）
+scripts/verify_book.py          验收（矩阵 / 来源 / 内容密度）
 scripts/shelf.py                书架归档（init/archive/list/check）
 ```
 
-引擎来自 [ebook-pdf-maker](../ebook-pdf-maker)，本仓库在其基础上用到并依赖这些能力：`--preset xhs`、`@@PIC` 图版文字板块、中文标点禁则、分页保护。
+引擎最初来自 [ebook-pdf-maker](../ebook-pdf-maker)，本包已把含小红书版式与联系页的版本 vendor 进来，
+clone 后即可独立出书。
 
 ## 版权
 
