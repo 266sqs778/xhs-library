@@ -134,7 +134,8 @@ class Shelf:
         suffix = ""
         if old and a.v2:
             n = 2
-            existing = {e["noteid"] + "|" + os.path.basename(e["path"]) for e in self.entries()}
+            existing = {e["noteid"] + "|" + os.path.basename(e["path"].rstrip("/\\"))
+                        for e in self.entries()}
             while True:
                 cand = safe_name("%s_%s_%s_v%d" % (date, a.title, a.author, n))
                 if noteid + "|" + cand not in existing:
@@ -199,7 +200,8 @@ class Shelf:
             "- **归档内容**：%s\n\n"
             "> 著作权归原作者及各位评论作者所有，本档仅供个人阅读存档，请勿传播或商用。\n"
             % (a.title, a.author, noteid, url, date, a.tags or "-", a.brief or "-",
-               ("v2 重制（此前版本见 INDEX 旧行）" if suffix else "v1"),
+               (("%s 重制（此前版本见 INDEX 旧行）" % suffix.lstrip("_"))
+                if suffix else "v1"),
                "、".join(copied)))
         io.open(os.path.join(dst, "note.meta.md"), "w", encoding="utf-8", newline="").write(meta)
 

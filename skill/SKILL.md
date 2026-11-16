@@ -1,7 +1,7 @@
 ---
 name: xhs-essence-book
 description: 把小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）采集、精选、汇编成一本内容优先的精华小书 PDF，并自动归档到书架。当用户提供小红书笔记链接/分享文案/xhslink 短链，说「做成小书」「摘录成册」「整理成精华册」「把这条帖子做成 PDF」「评论区也收进去」时使用。每本书末尾自带作者联系二维码矩阵（模因公社 / Re.Crescent Pisces / 九紫离火运），支持小红书风格排版、逐字照录与图版文字转录。
-version: 2.0.0
+version: 2.1.0
 ---
 
 # 小红书精华小书
@@ -83,6 +83,10 @@ python scripts/collect_note.py "<笔记链接>" -o note/
 删掉「编者序」「观点拆解」「编者按」这类元章节，全书 `@@LEAD` 最多 1 条，不用 `@@PAGE` 制造空页。
 **照录不改字**：不润色、不缩写、不改标点、不补句末标点；允许的三项归一化必须在此章逐项写明。
 
+**章节跨度**：紧凑版以「一章一页」为目标。每章内容控制在 1 页内（约 8–10 张评论卡，
+或 1 张插图 + 图版文字 + 2–3 张卡）；讨论线长了就用 `@@H2` 拆成多章，不要让一章横跨 3 页以上。
+评论区应收尽收，靠**拆章**而不是**删内容**来控制页数。
+
 ### 5 排版
 
 ```bash
@@ -91,8 +95,18 @@ python scripts/build_book.py --source note/book_source.txt \
   --intro "一句话说明收了什么、仅供个人存档" -o note/书名.pdf
 ```
 
-默认 `--preset xhs`（白底珊瑚红、黑体正文 10.4/17.6、版心更宽）。
-也可 `--preset modern`；`classic` **仅限公版古籍**，当代内容禁用。
+默认 `--preset xhs` + **`--density dense`（v2.1 起默认）**：白底珊瑚红、黑体正文 9.0/13.2、
+段间距 ×0.45、卡片内边距 ×0.55、版心加宽，出版说明与目录合并成一页，二维码矩阵成为真正的尾页。
+同等内容量可比旧宽松版少 3–4 页，每章基本落在 1 页内。
+按内容性质选参数，不要靠删原文压页数：
+
+| 场景 | 参数 |
+|---|---|
+| 图文/评论摘录（默认） | `--preset xhs --density dense` |
+| 需要大字号、留白多的收藏版 | `--preset xhs --density normal`（旧版 10.4/17.6 宽松版式） |
+| 长篇纯文字摘录 | `--preset modern`（dense 仅对 xhs 生效） |
+
+`--size` / `--lead` 可单独覆盖字号行距；`classic` **仅限公版古籍**，当代内容禁用。
 
 **联系页自动兜底**：书稿没写 `@@CONTACT` 时，`build_book.py` 会生成同目录临时副本补上标记再排，
 排完删除；引擎从 `--assets assets/brand` 读 `brand.json` 渲染三码矩阵。所以每本书必然有联系页。
@@ -151,6 +165,8 @@ python scripts/shelf.py list
 7. **版权口径**：当代内容一律 `xhs` 或 `modern`；写明「著作权归原作者及评论作者所有，仅供个人阅读存档，请勿传播或商用」。
 8. **不编数据**：拿不到的发布时间、互动数、图片一律留白并说明，不推测、不补写。
 9. **查重在先、归档在后**：成书前 `shelf.py check`，验收通过后 `shelf.py archive` 更新 INDEX.md；`books/` 不进 git。
+10. **页数靠密度与拆章，不靠删内容**：默认 `dense`；每章以 1 页为目标，章节长了拆章而非砍评论。
+    出书后必须渲染全页样张核对：无整页空白、无卡片孤零零跨页、尾页就是二维码矩阵。
 
 ## 目录
 
@@ -161,10 +177,10 @@ xhs-essence-book/
 ├── README.md                         安装与仓库说明
 ├── templates/book_source_template.txt 四章书稿骨架
 ├── assets/brand/                     品牌资源：brand.json + 三张二维码 + README
-├── vendor/book_pdf.py                排版引擎（含 xhs preset、评论卡、联系页）
+├── vendor/book_pdf.py                排版引擎（xhs preset、评论卡、联系页、--density dense 紧凑模式）
 └── scripts/
     ├── collect_note.py               采集（SSR 解析 + 图片落地 + 评论导出）
-    ├── build_book.py                 排版（默认 xhs，自动补 @@CONTACT）
+    ├── build_book.py                 排版（默认 xhs + dense，自动补 @@CONTACT）
     ├── verify_book.py                验收（含矩阵、来源、内容密度）
     └── shelf.py                      书架归档（init/archive/list/check）
 ```

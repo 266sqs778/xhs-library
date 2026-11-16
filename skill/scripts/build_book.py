@@ -8,6 +8,10 @@
 用法：
     python build_book.py --source book_source.txt --title "书名" --author "作者" -o out.pdf
     python build_book.py --source book_source.txt --title "书名" --author "作者" --preset modern
+    python build_book.py --source book_source.txt --title "书名" --author "作者" --density normal
+
+默认 --density dense：字号 9.0pt / 行距 13.4pt，出版说明与目录合并一页，
+章间留白与卡片内边距整体收紧，二维码矩阵独占尾页；页数比 normal 少约三分之一。
 """
 import argparse
 import io
@@ -55,6 +59,9 @@ def check_env(brand_dir):
     if "@@CONTACT" not in body:
         sys.exit("[FATAL] 引擎不含 @@CONTACT 二维码矩阵板块，成书会缺联系页：%s\n"
                  "        请改用本技能 vendor/book_pdf.py 或更新引擎。" % ENGINE)
+    if "DENSE" not in body:
+        sys.exit("[FATAL] 引擎不含 --density dense 紧凑排版模式：%s\n"
+                 "        请改用本技能 vendor/book_pdf.py 或更新引擎。" % ENGINE)
     if not os.path.exists(os.path.join(brand_dir, "brand.json")):
         sys.exit("[FATAL] 品牌资源缺失：%s/brand.json\n"
                  "        assets/brand/ 需含 brand.json 与三张二维码图片。" % brand_dir)
@@ -89,6 +96,9 @@ def main():
     ap.add_argument("--size", type=float, default=None, help="正文字号，留空随版式")
     ap.add_argument("--lead", type=float, default=None, help="行距，留空随版式")
     ap.add_argument("--page", default="A5", choices=["A5", "A4"])
+    ap.add_argument("--density", default="dense", choices=["dense", "normal"],
+                    help="dense=紧凑密度版（默认）：字号行距收紧、出版说明与目录合并、"
+                         "二维码矩阵独占尾页；normal=还原旧版宽松版式")
     ap.add_argument("--brand-dir", default=BRAND_DIR,
                     help="品牌资源目录（含 brand.json 与二维码），默认 assets/brand")
     ap.add_argument("-o", "--out", required=True)
@@ -101,6 +111,7 @@ def main():
     os.chdir(os.path.dirname(src_abs))
     cmd = [sys.executable, ENGINE, "--txt", src_abs, "--title", a.title,
            "--author", a.author, "--preset", a.preset, "--page", a.page,
+           "--density", a.density,
            "--assets", brand_dir, "-o", os.path.abspath(a.out)]
     if a.intro:
         cmd += ["--intro", a.intro]

@@ -268,6 +268,36 @@ def main():
         if cat["原文"] / tot < 0.35:
             fails.append("原文照录占比 %.1f%% 不足 35%%" % (100 * cat["原文"] / tot))
 
+    print("\n[8] 章节页数跨度与版心密度")
+    toc = doc.get_toc()
+    tail = len(pages) + 1
+    brand_title = ""
+    if os.path.exists(a.brand):
+        brand_title = flat(json.load(io.open(a.brand, encoding="utf-8")).get("title", ""))
+    for i, t in enumerate(pages):
+        ft = flat(t)
+        if (brand_title and brand_title in ft) or flat("内容简介") in ft:
+            tail = min(tail, i + 1)
+    spans = []
+    for idx, row in enumerate(toc):
+        start = row[2]
+        stop = toc[idx + 1][2] if idx + 1 < len(toc) else tail
+        end = max(start, stop - 1)
+        n = end - start + 1
+        spans.append(n)
+        print("   %-24s p%d–p%d  %d 页" % (row[1][:24], start, end, n))
+    if spans:
+        print("   最大章跨度 %d 页（紧凑版目标 ≤2 页）" % max(spans))
+        if max(spans) > 2:
+            fails.append("仍有章节跨 %d 页，超出紧凑版 ≤2 页目标" % max(spans))
+    body_first = toc[0][2] if toc else 1
+    body_pages = [p for i, p in enumerate(pages)
+                  if body_first <= i + 1 < tail]
+    han = [len(re.findall(r"[\u4e00-\u9fff]", p)) for p in body_pages]
+    if han:
+        print("   正文 %d 页｜平均 %.0f 汉字/页｜最高 %d｜最低 %d"
+              % (len(han), sum(han) / len(han), max(han), min(han)))
+
     if a.render:
         os.makedirs(a.render, exist_ok=True)
         for i, t in enumerate(pages):

@@ -44,6 +44,37 @@ try:
     _CJK_CANNOT_START = "，。！？；：、）》」』】〕”’…％·"
     _rl_textsplit.ALL_CANNOT_START += _CJK_CANNOT_START
     _rl_paragraph.ALL_CANNOT_START += _CJK_CANNOT_START
+
+    # reportlab 只允许「一个」标点悬挂到上一行行末；一旦行尾已挂了引号，
+    # 紧随的逗号就会掉到下一行行首。这里再补一道兜底：把上一行末尾的
+    # 1–3 个字符借到下一行行首，直到行首不再是标点（中文排版的正规断法）。
+    _orig_dumbSplit = _rl_textsplit.dumbSplit
+
+    def _cjk_dumbSplit(word, widths, maxWidths):
+        lines = _orig_dumbSplit(word, widths, maxWidths)
+        for i in range(1, len(lines)):
+            txt = lines[i][1]
+            if not isinstance(txt, str) or not txt or txt[0] not in _CJK_CANNOT_START:
+                continue
+            prev = lines[i - 1][1]
+            if not isinstance(prev, str) or not prev:
+                continue
+            moved = 0
+            while txt and txt[0] in _CJK_CANNOT_START and prev and moved < 3:
+                ch = prev[-1]
+                prev = prev[:-1]
+                txt = ch + txt
+                moved += 1
+            if not moved:
+                continue
+            lines[i - 1][1] = prev
+            lines[i][1] = txt
+            w = widths[0] if isinstance(widths, (list, tuple)) and widths else 0
+            lines[i - 1][0] += w * moved
+            lines[i][0] -= w * moved
+        return lines
+
+    _rl_textsplit.dumbSplit = _cjk_dumbSplit
 except Exception:
     pass
 
@@ -181,6 +212,17 @@ def apply_palette(name="classic"):
     ACCENT_HEX = pal["seal"]
     HL_HEX = pal["hl"]
 STATE = {"book": "", "chap": ""}
+
+# 紧凑密度模式（--density dense）：由 assemble() 统一设置，card()/rule()/SP() 读取。
+DENSE = False
+SP_K = 1.0          # 段间空白缩放
+PAD_K = 1.0         # 卡片内边距缩放
+TOC_K = 1.0         # 目录字号缩放
+
+
+def SP(h):
+    """受密度模式控制的段间空白。"""
+    return Spacer(1, h * SP_K)
 
 # 品牌素材（二维码/头像）：默认 skill 自带 templates/，可用 --assets 或 BOOK_ASSET_DIR 覆盖
 # 品牌名：--brand 或环境变量 BOOK_BRAND；为空=通用版（无藏书印/品牌段/联系图）
@@ -435,7 +477,9 @@ def parse_text(raw):
         flush()
         return chapters
 
-    merge = is_wrapped(lines)
+    # 结构化书稿（含 @@ 标记）每行即一段，不启用扫描本的行合并：
+    # 否则「原帖链接」这类不以句号收尾的行会与下一段黏成一句。
+    merge = is_wrapped(lines) and "@@" not in raw
     chs = build(False, merge)
     if sum(1 for t, _ in chs if t) < 3:      # 严格规则抓不到 → 宽松规则兜底
         chs2 = build(True, merge)
@@ -594,10 +638,11 @@ def card(rows, width, fill, bar, bar_w=3, pad_v=9, rules=False, box=False):
     box=True 时补一圈细边框（精髓评论卡用）。
     """
     t = Table([[r] for r in rows], colWidths=[width])
+    pad_v = pad_v * PAD_K
     cmds = [("BACKGROUND", (0, 0), (-1, -1), fill),
             ("LINEBEFORE", (0, 0), (0, -1), bar_w, bar),
-            ("LEFTPADDING", (0, 0), (-1, -1), 13),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 11),
+            ("LEFTPADDING", (0, 0), (-1, -1), 13 * PAD_K),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 11 * PAD_K),
             ("TOPPADDING", (0, 0), (-1, -1), pad_v),
             ("BOTTOMPADDING", (0, 0), (-1, -1), pad_v),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]
@@ -618,7 +663,7 @@ def rule(width, color=None, gap=9):
                            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                            ("TOPPADDING", (0, 0), (-1, -1), 0),
                            ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    return [Spacer(1, gap), t, Spacer(1, gap)]
+    return [SP(gap), t, SP(gap)]
 
 
 def _is_poem_title(s):
@@ -686,8 +731,9 @@ class _TOC(TableOfContents):
                          ("RIGHTPADDING", (0, 0), (-1, -1), 0)])
         super().__init__(tableStyle=ts)
         self.dotsMinLevel = 0
-        self.levelStyles = [ParagraphStyle("toc0", fontName="Song", fontSize=11,
-                                           leading=19, wordWrap="CJK")]
+        self.levelStyles = [ParagraphStyle("toc0", fontName="Song",
+                                           fontSize=11 * TOC_K,
+                                           leading=19 * TOC_K, wordWrap="CJK")]
 
 
 # 版式文案主题。classic 为默认的古籍整理版，逐字保持原有输出；
@@ -744,6 +790,13 @@ THEMES = {
                          "并注明原作者与链接；编者序、拆解与按语为编者观点，不代表原作者立场。",
         "front_disclaimer": "本册依据公开分享页采集整理，图片内文字已逐字转录并标明来源；"
                             "未取得或不可核实的部分均未补写或推测。",
+        "front_notice_compact": "【关于版权】本册所收为当代创作者作品，著作权归各原作者所有，"
+                                "不属于公有领域；保留署名与出处，仅作个人阅读存档的非商业摘录，"
+                                "未获授权不得转载、公开传播或商用。",
+        "front_license_compact": "【使用范围】仅供个人阅读、学习与存档；引用请回原帖核对并注明"
+                                 "原作者与链接。编者按语为编者观点，不代表原作者立场。",
+        "front_disclaimer_compact": "【采集说明】依据公开分享页整理，图片内文字逐字转录并标明来源；"
+                                    "未取得或不可核实的部分不补写、不推测。",
     },
 }
 
@@ -932,16 +985,34 @@ def make_toc_chapters(chapters, title="", max_vol=15):
 
 def assemble(chapters, out, title, author, intro, poetry=False,
              assets=None, size=11.5, lead=21.5, page=A5, brand="", theme=None,
-             preset="classic"):
-    global PAGE_W, PAGE_H
+             preset="classic", density="normal"):
+    global PAGE_W, PAGE_H, DENSE, SP_K, PAD_K, TOC_K
+    DENSE = (density == "dense" and preset == "xhs")
+    SP_K, PAD_K, TOC_K = (0.45, 0.55, 0.86) if DENSE else (1.0, 1.0, 1.0)
     PAGE_W, PAGE_H = page
     theme = theme or THEMES["classic"]
     title, author, intro = conv(title), conv(author), conv(intro)
     STATE["book"] = title
     ST = make_styles(size, lead, preset)
+    if DENSE:
+        for _s in ST.values():
+            _s.spaceBefore *= SP_K
+            _s.spaceAfter *= SP_K
+            if _s.leading > 20:
+                _s.leading *= 0.82
+            if _s.fontSize >= 15:
+                _s.fontSize *= 0.86
+        ST["front_body"].fontSize = 8.6
+        ST["front_body"].leading = 13.4
+        ST["chapter"].leading = 18
+        ST["chapter"].spaceBefore = 7
+        ST["chapter"].spaceAfter = 4
+        ST["h2"].spaceBefore = 7
+        ST["h2"].spaceAfter = 3
 
     if preset == "xhs":
-        M_TOP, M_BOT, M_L, M_R = 42, 36, 44, 44   # 版心更宽，信息密度更高
+        M_TOP, M_BOT, M_L, M_R = ((32, 26, 36, 36) if DENSE
+                                  else (42, 36, 44, 44))   # 紧凑版版心更宽
     else:
         M_TOP, M_BOT, M_L, M_R = 58, 52, 54, 54
     LEFT, RIGHT = M_L, PAGE_W - M_R
@@ -1024,7 +1095,7 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                  Spacer(1, 30), Paragraph(title, cov_title),
                  Spacer(1, 40), Paragraph(author, cov_author),
                  Spacer(1, 150), Paragraph(theme["edition"], cov_year),
-                 NextPageTemplate("toc"), PageBreak()]
+                 NextPageTemplate("body" if DENSE else "toc"), PageBreak()]
     else:
         story = [Spacer(1, 70), Paragraph(theme["cover_series"], ST["cover_series"]),
                  Spacer(1, 26),
@@ -1034,25 +1105,44 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                  NextPageTemplate("toc"), PageBreak()]
 
     # 出版说明（简介 → 制作说明 → 版权声明 → 使用范围 → 免责 → 联系图[品牌模式]）
+    # 紧凑版把出版说明与目录压进同一页，省掉一页几乎全空的目录页。
     maker = ("「%s」" % brand) if brand else "整理者"
-    story += [Paragraph("出 版 说 明", ST["front_title"]), Spacer(1, 6),
-              Paragraph(rich(intro), ST["front_body"]), Spacer(1, 8),
-              Paragraph(esc(theme["front_maker"] % maker), ST["front_body"]),
-              Spacer(1, 8),
-              Paragraph(esc(theme["front_notice"]), ST["front_body"]),
-              Spacer(1, 8),
-              Paragraph(esc(theme["front_license"]), ST["front_body"]),
-              Spacer(1, 8),
-              Paragraph(esc(theme["front_disclaimer"]), ST["front_body"]),
-              Spacer(1, 8),
-              _contact_block(brand)]
-
     toc_chapters = make_toc_chapters(chapters, title)
-    story += [NextPageTemplate("toc"), PageBreak(), Paragraph("目 录", ST["toc_title"]),
-              _TOC(), NextPageTemplate("body"), PageBreak()]
+    f_notice = theme.get("front_notice_compact") or theme["front_notice"]
+    f_license = theme.get("front_license_compact") or theme["front_license"]
+    f_disclaimer = theme.get("front_disclaimer_compact") or theme["front_disclaimer"]
+    if DENSE:
+        toc_head = ParagraphStyle("toc_head_dense", parent=ST["toc_title"],
+                                  fontSize=11.5, leading=16, spaceAfter=4,
+                                  spaceBefore=10)
+        story += [Paragraph("出 版 说 明 · 目 录", ST["front_title"]), SP(4),
+                  Paragraph(rich(intro), ST["front_body"]), SP(4),
+                  Paragraph(esc(theme["front_maker"] % maker), ST["front_body"]),
+                  SP(4),
+                  Paragraph(esc(f_notice), ST["front_body"]), SP(4),
+                  Paragraph(esc(f_license), ST["front_body"]), SP(4),
+                  Paragraph(esc(f_disclaimer), ST["front_body"]), SP(6),
+                  Paragraph("目 录", toc_head), _TOC(), PageBreak()]
+    else:
+        story += [Paragraph("出 版 说 明", ST["front_title"]), SP(6),
+                  Paragraph(rich(intro), ST["front_body"]), SP(8),
+                  Paragraph(esc(theme["front_maker"] % maker), ST["front_body"]),
+                  SP(8),
+                  Paragraph(esc(theme["front_notice"]), ST["front_body"]),
+                  SP(8),
+                  Paragraph(esc(theme["front_license"]), ST["front_body"]),
+                  SP(8),
+                  Paragraph(esc(theme["front_disclaimer"]), ST["front_body"]),
+                  SP(8),
+                  _contact_block(brand)]
+        story += [NextPageTemplate("toc"), PageBreak(),
+                  Paragraph("目 录", ST["toc_title"]),
+                  _TOC(), NextPageTemplate("body"), PageBreak()]
 
-    cap_style = ParagraphStyle("img_caption", parent=ST["body"], fontSize=9,
-                               leading=14, alignment=1, textColor=GRAY)
+    cap_style = ParagraphStyle("img_caption", parent=ST["body"],
+                               fontSize=8 if DENSE else 9,
+                               leading=12 if DENSE else 14,
+                               alignment=1, textColor=GRAY)
 
     def card_flow(p):
         """卡片类板块只返回 Table，交给 KeepTogether 包裹，杜绝跨页断裂。"""
@@ -1127,16 +1217,19 @@ def assemble(chapters, out, title, author, intro, poetry=False,
             base.update(kw)
             return ParagraphStyle(name, **base)
 
-        s_title = cs("ct_title", fontSize=13.5, leading=20, textColor=SEAL,
-                     spaceAfter=7)
-        s_body = cs("ct_body", fontSize=9.4, leading=15.4,
-                    alignment=TA_JUSTIFY, spaceAfter=4)
-        s_label = cs("ct_label", fontSize=9, leading=13, spaceBefore=5)
+        fk = 0.92 if DENSE else 1.0
+        lk = 0.88 if DENSE else 1.0
+        s_title = cs("ct_title", fontSize=13.5 * fk, leading=20 * lk,
+                     textColor=SEAL, spaceAfter=7 * SP_K)
+        s_body = cs("ct_body", fontSize=9.4 * fk, leading=15.4 * lk,
+                    alignment=TA_JUSTIFY, spaceAfter=4 * SP_K)
+        s_label = cs("ct_label", fontSize=9 * fk, leading=13 * lk,
+                     spaceBefore=5 * SP_K)
         s_hint = cs("ct_hint", fontSize=7.6, leading=11, textColor=GRAY)
-        s_brand = cs("ct_brand", fontSize=9, leading=14, textColor=SEAL,
-                     spaceAfter=3)
+        s_brand = cs("ct_brand", fontSize=9 * fk, leading=14 * lk,
+                     textColor=SEAL, spaceAfter=3 * SP_K)
         s_foot = cs("ct_foot", fontSize=7.6, leading=12, textColor=GRAY,
-                    spaceBefore=4)
+                    spaceBefore=4 * SP_K)
 
         out = [Paragraph(esc(cfg.get("title", "")), s_title)]
         if cfg.get("intro"):
@@ -1147,7 +1240,7 @@ def assemble(chapters, out, title, author, intro, poetry=False,
         qrs = (cfg.get("qr") or [])[:3]
         imgs, labels, hints = [], [], []
         cellw = (width - 16) / 3.0
-        qsize = min(cellw - 2, 104)
+        qsize = min(cellw - 2, 88 if DENSE else 104)
         for q in qrs:
             fp = os.path.join(bdir, q.get("file", ""))
             if os.path.exists(fp):
@@ -1170,18 +1263,24 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                 ("LINEABOVE", (0, 0), (-1, 0), 0.6, HEAD_RULE),
                 ("LINEBELOW", (0, -1), (-1, -1), 0.6, HEAD_RULE),
             ]))
-            out.append(Spacer(1, 6))
+            out.append(SP(6))
             out.append(t)
         bl = cfg.get("brand_line") or []
         if isinstance(bl, str):
             bl = [bl]
         if bl:
-            out.append(Spacer(1, 9))
+            out.append(SP(9))
             for line in bl:
                 out.append(Paragraph(esc(line), s_brand))
         if cfg.get("footer"):
             out.append(Paragraph(esc(cfg["footer"]), s_foot))
+        if DENSE:
+            out.append(Paragraph(esc("《%s》· %s" % (STATE["book"],
+                                                   theme["copyright_line"])),
+                                 s_foot))
         return out
+
+    contact_added = [False]
 
     def block(p):
         """结构化书稿标记 → Flowable 列表；无标记则按正文段落排。"""
@@ -1198,12 +1297,12 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                 before, after = 0, 8
             else:
                 before, after = 0, 6
-            out = [Spacer(1, before)] if before else []
-            return out + [KeepTogether([c]), Spacer(1, after)]
+            out = [SP(before)] if before else []
+            return out + [KeepTogether([c]), SP(after)]
         if p.startswith("@@NOTE "):
             return [Paragraph(rich("编者注｜" + p[7:].strip()), ST["note"])]
         if p.startswith("@@H2 "):
-            return [Spacer(1, 5), Paragraph(rich(p[5:].strip()), ST["h2"])]
+            return [SP(5), Paragraph(rich(p[5:].strip()), ST["h2"])]
         if p.startswith("@@BY "):
             return [by_para(p)]
         if p.startswith("@@KEY "):
@@ -1226,8 +1325,10 @@ def assemble(chapters, out, title, author, intro, poetry=False,
         if p == "@@PAGE":
             return [PageBreak()]
         if p.startswith("@@CONTACT"):
-            # 固定尾页：二维码矩阵 + 说明。分隔线与正文一起绑定，整块不跨页。
-            return [KeepTogether(rule(w, SEAL, 6) + contact_flow(w)), Spacer(1, 8)]
+            # 固定尾页：二维码矩阵 + 说明。紧凑版另起一页，确保矩阵独占尾页。
+            contact_added[0] = True
+            pre = [PageBreak()] if DENSE else []
+            return pre + [KeepTogether(rule(w, SEAL, 6) + contact_flow(w)), SP(8)]
         if p.startswith("@@IMG "):
             spec = p[6:].strip()
             img_path, sep, cap = spec.partition(" | ")
@@ -1235,13 +1336,15 @@ def assemble(chapters, out, title, author, intro, poetry=False,
             if os.path.exists(img_path):
                 im = Image(img_path)
                 iw, ih = im.imageWidth, im.imageHeight
-                scale = min(w / iw, (262.0 if preset == "xhs" else 340.0) / ih)
+                max_h = ((205.0 if DENSE else 262.0)
+                         if preset == "xhs" else 340.0)
+                scale = min(w / iw, max_h / ih)
                 im.drawWidth, im.drawHeight = iw * scale, ih * scale
                 im.hAlign = "CENTER"
                 grp = [im]
                 if cap.strip():
-                    grp += [Spacer(1, 5), Paragraph(rich(cap.strip()), cap_style)]
-                return [Spacer(1, 8), KeepTogether(grp), Spacer(1, 8)]
+                    grp += [SP(5), Paragraph(rich(cap.strip()), cap_style)]
+                return [SP(8), KeepTogether(grp), SP(8)]
             return [Paragraph(rich("〔插图缺失：%s〕" % img_path), cap_style)]
         return [Paragraph(rich(p), ST["body"])]
 
@@ -1254,16 +1357,16 @@ def assemble(chapters, out, title, author, intro, poetry=False,
             if p.startswith("@@BY ") and nxt.startswith(("@@QUOTE ", "@@GEM ")):
                 gem = nxt.startswith("@@GEM ")
                 if gem:
-                    out.append(Spacer(1, 10))
+                    out.append(SP(10))
                 out.append(KeepTogether([by_para(p), card_flow(nxt)]))
-                out.append(Spacer(1, 12 if gem else 7))
+                out.append(SP(12 if gem else 7))
                 i += 2
                 continue
             if p.startswith("@@H2 ") and nxt.startswith(("@@CMT ", "@@STAR ")):
                 # 小节标题不许孤零零留在页尾：与紧随的第一张评论卡同页
                 grp = flat(block(p)) + [card_flow(nxt)]
                 out.append(KeepTogether(grp))
-                out.append(Spacer(1, 8))
+                out.append(SP(8))
                 i += 2
                 continue
             out.extend(block(p))
@@ -1305,15 +1408,21 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                              ST["body_poem"] if _is_verse(p) else ST["body"]))
                 nxt = paras[i + 1] if i + 1 < n else None
                 if _is_poem_title(p) or (nxt and _is_poem_title(nxt)):
-                    story.append(Spacer(1, 10))
+                    story.append(SP(10))
                 elif _ends_sentence(p) and (nxt is None or _is_verse(nxt)):
-                    story.append(Spacer(1, 9))
+                    story.append(SP(9))
                 else:
-                    story.append(Spacer(1, 2))
-        story.append(Spacer(1, 6))
+                    story.append(SP(2))
+        story.append(SP(6))
 
-    story += [NextPageTemplate("back"), PageBreak(),
-              BackCover(title, author, intro, assets, brand, theme)]
+    if DENSE:
+        if not contact_added[0]:
+            story += [PageBreak(),
+                      KeepTogether(rule(RIGHT - LEFT, SEAL, 6)
+                                   + contact_flow(RIGHT - LEFT))]
+    else:
+        story += [NextPageTemplate("back"), PageBreak(),
+                  BackCover(title, author, intro, assets, brand, theme)]
     doc.multiBuild(story)
     return True
 
@@ -1348,6 +1457,9 @@ def main():
                     help="版式：classic=古籍整理版（默认）；modern=当代内容摘录版；"
                          "xhs=小红书风格（白底珊瑚红、黑体正文、字号更小、密度更高）")
     ap.add_argument("--page", default="A5", choices=["A5", "A4"])
+    ap.add_argument("--density", default="normal", choices=["normal", "dense"],
+                    help="dense=紧凑密度版（xhs 专用）：字号/行距/间距收紧、"
+                         "出版说明与目录合并、二维码矩阵独占尾页，页数更省")
     ap.add_argument("--size", type=float, default=None,
                     help="正文字号；留空按版式取默认（classic/modern 11.5，xhs 10.4）")
     ap.add_argument("--lead", type=float, default=None,
@@ -1378,15 +1490,16 @@ def main():
     out = a.out or (os.path.splitext(src)[0] + ".pdf")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     # 字号默认值随版式走：xhs 更小更紧，其余保持原有设定
+    tight = (a.density == "dense" and a.preset == "xhs")
     if a.size is None:
-        a.size = 10.4 if a.preset == "xhs" else 11.5
+        a.size = (9.0 if tight else 10.4) if a.preset == "xhs" else 11.5
     if a.lead is None:
-        a.lead = 17.6 if a.preset == "xhs" else 21.5
+        a.lead = (13.4 if tight else 17.6) if a.preset == "xhs" else 21.5
     apply_palette("xhs" if a.preset == "xhs" else "classic")
     assemble(chapters, out, a.title, a.author, a.intro or ("《%s》整理本。" % a.title),
              poetry=bool(a.poetry), assets=a.assets, size=a.size, lead=a.lead,
              page=A5 if a.page == "A5" else A4, brand=a.brand, theme=THEMES[a.preset],
-             preset=a.preset)
+             preset=a.preset, density=a.density)
     npar = sum(len(ps) for _, ps in chapters)
     # 用分辑兜底后的结果统计，保证「N章」与 PDF 目录条目数一致
     nch = sum(1 for t, _ in make_toc_chapters(chapters, a.title) if t)
@@ -1413,9 +1526,9 @@ def main():
         except BaseException as e:
             fix = "跳过(%s)" % e
 
-    print("[OK] %s | %d章 | %d段 | 合并=%s | %d页 | 文本层=%s | %dKB"
-          % (out, nch, npar, "是" if merged else "否", _page_count(out), fix,
-             os.path.getsize(out) // 1024))
+    print("[OK] %s | %d章 | %d段 | 合并=%s | 密度=%s | %d页 | 文本层=%s | %dKB"
+          % (out, nch, npar, "是" if merged else "否", a.density,
+             _page_count(out), fix, os.path.getsize(out) // 1024))
 
 
 if __name__ == "__main__":
