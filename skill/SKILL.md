@@ -95,7 +95,7 @@ python scripts/build_book.py --source note/book_source.txt \
   --intro "一句话说明收了什么、仅供个人存档" -o note/书名.pdf
 ```
 
-默认 `--preset xhs` + **`--density dense`（v2.1 起默认）**：白底珊瑚红、黑体正文 9.0/13.2、
+默认 `--preset xhs` + **`--density dense`（v2.1 起默认）**：白底珊瑚红、黑体正文 9.0/13.4、
 段间距 ×0.45、卡片内边距 ×0.55、版心加宽，出版说明与目录合并成一页，二维码矩阵成为真正的尾页。
 同等内容量可比旧宽松版少 3–4 页，每章基本落在 1 页内。
 按内容性质选参数，不要靠删原文压页数：
