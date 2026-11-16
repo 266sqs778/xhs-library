@@ -1144,6 +1144,52 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                                leading=12 if DENSE else 14,
                                alignment=1, textColor=GRAY)
 
+    # ---- 聊天气泡：@@CHAT0 主楼 / @@CHAT1 回楼主 / @@CHAT2 回别人的子子楼 ----
+    CHAT_STYLES = []
+    for ci, (bgc, bdc) in enumerate((
+            (HexColor("#fdeee6"), HexColor("#e6b39c")),
+            (HexColor("#f2f5f8"), HexColor("#ccd9e4")),
+            (HexColor("#fafaf7"), HexColor("#deded6")))):
+        CHAT_STYLES.append(ParagraphStyle(
+            "chat_l%d" % ci, parent=ST["body"], fontName="Hei",
+            fontSize=size + (0.6 if ci == 0 else (-0.3 if ci == 1 else -0.9)),
+            leading=lead + (1 if ci == 0 else (-1 if ci == 1 else -2.5)),
+            alignment=TA_JUSTIFY, firstLineIndent=0, wordWrap="CJK",
+            textColor=INK, spaceBefore=0, spaceAfter=0,
+            backColor=bgc, borderWidth=0.8, borderColor=bdc,
+            borderRadius=5,
+            borderPadding=(6 * PAD_K, 9 * PAD_K, 6 * PAD_K, 9 * PAD_K)))
+
+    def chat_flow(p):
+        """三级气泡：来源行 + 原文，按楼层缩进与配色，整块不跨页。"""
+        m = re.match(r"^@@CHAT([012]) (.*)$", p)
+        if not m:
+            return None
+        lv = int(m.group(1))
+        src, sep, body = m.group(2).strip().partition("｜")
+        if not sep:
+            src, body = "", src
+        # 来源行与正文必须分成两个 Paragraph：多片段 CJK 换行会绕过禁则补丁，
+        # 让逗号落到行首。昵称小字浮在气泡上方，正文独占圆角气泡。
+        head_style = ParagraphStyle(
+            "chat_head_%d" % lv, parent=ST["body"], fontName="Hei",
+            fontSize=size - 2.0, leading=lead - 1.5,
+            textColor=SEAL if lv == 0 else HexColor("#5a6470"),
+            alignment=0, firstLineIndent=0, wordWrap="CJK",
+            spaceBefore=0, spaceAfter=3 * SP_K)
+        w = RIGHT - LEFT
+        t = Table([[Paragraph(rich(src.strip()), head_style)],
+                   [Paragraph(rich(body.strip()), CHAT_STYLES[lv])]],
+                  colWidths=[w * (0.94, 0.84, 0.75)[lv]])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (0, 0), 3)]))
+        return t
+
     def card_flow(p):
         """卡片类板块只返回 Table，交给 KeepTogether 包裹，杜绝跨页断裂。"""
         w = RIGHT - LEFT
@@ -1285,6 +1331,10 @@ def assemble(chapters, out, title, author, intro, poetry=False,
     def block(p):
         """结构化书稿标记 → Flowable 列表；无标记则按正文段落排。"""
         w = RIGHT - LEFT
+        ch = chat_flow(p)
+        if ch is not None:
+            lv = int(p[6])
+            return ([SP(7)] if lv == 0 else []) + [KeepTogether([ch]), SP(6)]
         c = card_flow(p)
         if c is not None:
             if p.startswith("@@LEAD "):
@@ -1362,9 +1412,10 @@ def assemble(chapters, out, title, author, intro, poetry=False,
                 out.append(SP(12 if gem else 7))
                 i += 2
                 continue
-            if p.startswith("@@H2 ") and nxt.startswith(("@@CMT ", "@@STAR ")):
+            if p.startswith("@@H2 ") and nxt.startswith(("@@CMT ", "@@STAR ", "@@CHAT0 ")):
                 # 小节标题不许孤零零留在页尾：与紧随的第一张评论卡同页
-                grp = flat(block(p)) + [card_flow(nxt)]
+                first = chat_flow(nxt) if nxt.startswith("@@CHAT0 ") else card_flow(nxt)
+                grp = flat(block(p)) + [first]
                 out.append(KeepTogether(grp))
                 out.append(SP(8))
                 i += 2

@@ -50,7 +50,7 @@ def source_lines(src):
     quotes, keys, pics = [], [], []
     for l in src.split("\n"):
         t = l.strip()
-        if t.startswith(("@@CMT ", "@@STAR ")):
+        if t.startswith(("@@CMT ", "@@STAR ", "@@CHAT0 ", "@@CHAT1 ", "@@CHAT2 ")):
             parts = t.split(" ", 1)[1].split("｜")
             if len(parts) > 1:
                 quotes.append(parts[1].strip())
@@ -74,7 +74,7 @@ def density(src):
         t = l.strip()
         if not t:
             continue
-        if t.startswith(("@@CMT ", "@@STAR ")):
+        if t.startswith(("@@CMT ", "@@STAR ", "@@CHAT0 ", "@@CHAT1 ", "@@CHAT2 ")):
             parts = [x.strip() for x in t.split(" ", 1)[1].split("｜", 2)]
             cat["来源"] += len(parts[0])
             cat["原文"] += len(parts[1]) if len(parts) > 1 else 0
@@ -211,9 +211,13 @@ def main():
             fails.append("图版文字未落入 PDF：%s" % p_[:24])
     # 来源清晰度：金句必须自带署名；引用块必须有署名行
     no_by = [k for k in re.findall(r"^@@KEY (.+)$", src, re.M) if "｜" not in k]
-    print("   金句缺署名 %d 条｜评论引用块缺署名 %d 条" % (len(no_by), bare_quotes))
-    if no_by or bare_quotes:
-        fails.append("有引文没带来源（金句 %d、引用块 %d）" % (len(no_by), bare_quotes))
+    chat_lines = [l.strip() for l in lines if l.strip().startswith(("@@CHAT0 ", "@@CHAT1 ", "@@CHAT2 "))]
+    no_chat_src = [l for l in chat_lines if "｜" not in l]
+    print("   气泡 %d 条（缺来源 %d）｜金句缺署名 %d 条｜评论引用块缺署名 %d 条"
+          % (len(chat_lines), len(no_chat_src), len(no_by), bare_quotes))
+    if no_by or bare_quotes or no_chat_src:
+        fails.append("有引文没带来源（金句 %d、气泡 %d、引用块 %d）"
+                     % (len(no_by), len(no_chat_src), bare_quotes))
 
     print("\n[6] 联系页二维码矩阵")
     if a.no_contact:
@@ -245,7 +249,7 @@ def main():
             fails.append("联系页未区分「整理者 ≠ 原帖作者」，版权口径不清")
 
     print("\n[7] 内容密度（新格式书稿）")
-    if not re.search(r"^@@(CMT|STAR) ", src, re.M):
+    if not re.search(r"^@@(CMT|STAR|CHAT[012]) ", src, re.M):
         warns.append("旧格式书稿（无 @@CMT 评论卡），内容密度改用人工复核")
     else:
         cat = density(src)

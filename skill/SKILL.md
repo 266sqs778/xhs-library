@@ -1,7 +1,7 @@
 ---
 name: xhs-essence-book
 description: 把小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）采集、精选、汇编成一本内容优先的精华小书 PDF，并自动归档到书架。当用户提供小红书笔记链接/分享文案/xhslink 短链，说「做成小书」「摘录成册」「整理成精华册」「把这条帖子做成 PDF」「评论区也收进去」时使用。每本书末尾自带作者联系二维码矩阵（模因公社 / Re.Crescent Pisces / 九紫离火运），支持小红书风格排版、逐字照录与图版文字转录。
-version: 2.1.0
+version: 2.2.0
 ---
 
 # 小红书精华小书
@@ -21,7 +21,7 @@ version: 2.1.0
 
 - Python 3.9+，需要 `reportlab`、`pymupdf`、`fonttools`；
 - 中文字体：宋体 / 黑体 / 楷体 / 仿宋（Windows 自带）；`curl`（采集）；
-- **排版引擎自带**：`vendor/book_pdf.py`（含 `--preset xhs`、`@@CMT/@@STAR/@@CONTACT`），
+- **排版引擎自带**：`vendor/book_pdf.py`（含 `--preset xhs`、`@@CMT/@@STAR/@@CHAT0-2/@@CONTACT`），
   不依赖外部 `ebook-pdf-maker`；需要时可设 `XHS_BOOK_ENGINE` 覆盖；
 - **品牌资源**：`assets/brand/brand.json` + 三张二维码图片。改联系页文案、换码只改这个目录，
   不用碰引擎和书稿（详见 `assets/brand/README.md`）。
@@ -87,6 +87,14 @@ python scripts/collect_note.py "<笔记链接>" -o note/
 或 1 张插图 + 图版文字 + 2–3 张卡）；讨论线长了就用 `@@H2` 拆成多章，不要让一章横跨 3 页以上。
 评论区应收尽收，靠**拆章**而不是**删内容**来控制页数。
 
+**对话气泡分区（推荐）**：有明确回复关系时，用 `@@CHAT0/1/2` 把一条讨论串做成聊天气泡区，
+而不是逐条平铺评论卡。三级按公开页返回的 `replyTo` 关系判定：
+`0` = 主楼（一级评论）、`1` = 回复楼主、`2` = 回复另一条评论的「子子楼」。
+每个讨论串自成一个分区（`@@H2` 起头 + 主楼 + 若干回复），**分区不跨页**；
+来源行浮在气泡上方（谁说的 / 什么关系 / 多少赞），正文独占圆角气泡，三级用缩进与底色区分。
+拿不到 `replyTo` 就按可见顺序保守分层，并在末章说明，不推断未显示的楼层。
+纯 @ 召唤、四字提问这类无信息量回复可以不收，在末章交代数量与一句原因。
+
 ### 5 排版
 
 ```bash
@@ -147,6 +155,7 @@ python scripts/shelf.py list
 ## 书稿标记速查
 
 `@@CMT 来源｜原文｜短评` 评论卡 · `@@STAR 来源｜原文｜短评` 精髓卡（珊瑚红框）·
+`@@CHAT0 来源｜原文` 主楼气泡 · `@@CHAT1 来源｜原文` 回楼主气泡 · `@@CHAT2 来源｜原文` 子子楼气泡 ·
 `@@KEY 原句｜昵称` 金句自带署名 · `@@PIC 图里的文字` 图版文字（`／` 分行）·
 `@@IMG 路径 | 图注` 插图 · `@@QUOTE` 原帖正文/图注引用块 · `@@BY` 评论署名（旧格式）·
 `@@H2` 小节 · `@@NOTE` 编者注（自动加「编者注｜」）· `@@LEAD` 核心观点 · `@@POINT` 分点 ·
@@ -167,6 +176,8 @@ python scripts/shelf.py list
 9. **查重在先、归档在后**：成书前 `shelf.py check`，验收通过后 `shelf.py archive` 更新 INDEX.md；`books/` 不进 git。
 10. **页数靠密度与拆章，不靠删内容**：默认 `dense`；每章以 1 页为目标，章节长了拆章而非砍评论。
     出书后必须渲染全页样张核对：无整页空白、无卡片孤零零跨页、尾页就是二维码矩阵。
+11. **对话按楼分区**：有回复关系就做 `@@CHAT0/1/2` 气泡，讨论串不跨页；拿不到关系就保守分层并说明，
+    不臆造楼层。气泡来源行必须写清「谁说的 / 什么关系 / 多少赞」，缺数据留白不写占位。
 
 ## 目录
 
@@ -177,7 +188,7 @@ xhs-essence-book/
 ├── README.md                         安装与仓库说明
 ├── templates/book_source_template.txt 四章书稿骨架
 ├── assets/brand/                     品牌资源：brand.json + 三张二维码 + README
-├── vendor/book_pdf.py                排版引擎（xhs preset、评论卡、联系页、--density dense 紧凑模式）
+├── vendor/book_pdf.py                排版引擎（xhs preset、评论卡、三级气泡、联系页、--density dense）
 └── scripts/
     ├── collect_note.py               采集（SSR 解析 + 图片落地 + 评论导出）
     ├── build_book.py                 排版（默认 xhs + dense，自动补 @@CONTACT）

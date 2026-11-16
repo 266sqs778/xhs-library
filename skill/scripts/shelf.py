@@ -133,12 +133,12 @@ class Shelf:
         # 版本号
         suffix = ""
         if old and a.v2:
-            n = 2
-            existing = {e["noteid"] + "|" + os.path.basename(e["path"].rstrip("/\\"))
-                        for e in self.entries()}
+            # 版本号按同一笔记的全局归档次数递增，不随本次书名变化而回退到 v2
+            n = len([e for e in self.entries() if e["noteid"] == noteid]) + 1
+            existing = {os.path.basename(e["path"].rstrip("/\\")) for e in self.entries()}
             while True:
                 cand = safe_name("%s_%s_%s_v%d" % (date, a.title, a.author, n))
-                if noteid + "|" + cand not in existing:
+                if cand not in existing:
                     break
                 n += 1
             suffix = "_v%d" % n
