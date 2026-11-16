@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-11-16",
+  "note": "分类体系配置。可随时改：调关键词、改书名映射、增删类别；每次改动追加一条 changelog 并把 version 递增。classify.py 读它给书架的书自动归类，build_collection.py 按归类结果出主题合集。",
+  "match": {
+    "fields": ["title", "tags", "brief", "author"],
+    "min_score": 1,
+    "multi_label": true,
+    "max_labels": 2,
+    "primary_is_first": true
+  },
+  "categories": [
+    {
+      "id": "attention-energy",
+      "name": "注意力与能量",
+      "desc": "注意力被谁夺走、能量与显化、专注与内耗这类自我观察",
+      "keywords": ["宇宙能量", "宇宙", "能量", "注意力", "显化", "专注", "内耗", "致知", "刷到即存", "灵气", "源头"],
+      "title_extra": "注意力 · 能量 · 显化"
+    },
+    {
+      "id": "relationship",
+      "name": "关系与亲密",
+      "desc": "亲密关系、性与性别、责任与相处方式",
+      "keywords": ["性取向", "亲密关系", "责任", "性别", "异性", "恋爱", "相处", "Reporter", "酷儿", "草人"],
+      "title_extra": "关系 · 责任 · 性别"
+    },
+    {
+      "id": "self-growth",
+      "name": "自我成长与觉察",
+      "desc": "修行、命运、心性、把体验转成可讨论的问题",
+      "keywords": ["修行", "命运", "觉察", "心性", "空性", "佛", "魔考", "成长", "反思", "推测"],
+      "title_extra": "觉察 · 成长 · 心性"
+    },
+    {
+      "id": "info-hygiene",
+      "name": "信息与注意力经济",
+      "desc": "平台、算法、广告、被设计出来争夺时间的机制",
+      "keywords": ["平台", "广告", "算法", "软件", "流量", "货币", "抢夺", "刷", "信息流"],
+      "title_extra": "平台 · 算法 · 注意力经济"
+    }
+  ],
+  "overrides": {
+    "_note": "人工覆盖，优先级最高。值可以是类别 id 字符串或 id 数组；填 [] 表示不归入任何类。按笔记 ID 填写。",
+    "6af30b9e000000002b01eccc": ["attention-energy", "info-hygiene"],
+    "6af66e07000000001802cbf9": ["relationship", "self-growth"]
+  },
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-11-16",
+      "note": "初版：4 类（注意力与能量 / 关系与亲密 / 自我成长与觉察 / 信息与注意力经济），对现有两篇帖子做人工覆盖归类。后续每加一类、调一次关键词或覆盖，都追加一行并递增 version。"
+    }
+  ]
+}

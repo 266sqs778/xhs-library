@@ -1,6 +1,9 @@
 # 书的内容只在本地，不随 git 公开
 books/
 INDEX.md
+CATEGORIES.md
+categories.json
+collections/
 
 # 缓存
 __pycache__/

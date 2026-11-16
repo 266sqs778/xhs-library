@@ -1,4 +1,4 @@
-# 小红书精华小书 · Skill（v2.2）
+# 小红书精华小书 · Skill（v2.3）
 
 把一条小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）编成一本**内容优先**的 PDF 小书，并归档进书架。
 
@@ -9,6 +9,8 @@
 - **联系页**：每本末尾自动一页「联系与合作」三码矩阵 + 一小段说明 + 品牌关联
 - **验收**：残留标记、引文逐字比对、行首标点、版权口径、目录书签、**二维码矩阵与内容密度**、抽样页
 - **归档**：`shelf.py` 按笔记 ID 查重，每本一个文件夹，`INDEX.md` 总目录
+- **分类与合集**：`taxonomy.json` 配置可迭代的分类体系，`classify.py` 把帖子归类，
+  `build_collection.py` 按类别汇编主题合集 / 精华全集（v2.3）
 
 ## 安装
 
@@ -61,6 +63,31 @@ python scripts/shelf.py archive note/ --title "书名" --author "原作者" \
   --verify verify_report.txt --render 抽样页
 ```
 
+## 分类与主题合集（v2.3）
+
+书架里的帖子可以按主题归类、把同类聚成合集，规则**配置驱动、可反复迭代**：
+
+```bash
+# 1. 改分类体系：assets/taxonomy/taxonomy.json
+#    调关键词 / 写 overrides（按笔记 ID 人工指定）/ 加减类别
+#    每次改动追加一条 changelog 并把 version 递增
+
+# 2. 重新归类（按笔记 ID 去重，同帖取最新版本）
+python scripts/classify.py --explain
+#    → CATEGORIES.md（人读分类总览）、categories.json（机器索引）
+
+# 3. 按类别出合集（本地 collections/，不进 git）
+python scripts/build_collection.py --category attention-energy   # 某类一册
+python scripts/build_collection.py --all                         # 每类各一册
+python scripts/build_collection.py --mega                        # 全类别聚成一册精华全集
+```
+
+分类配置只有四类文件需要改：`categories`（类别与关键词）、`overrides`（人工指定）、
+`match`（打分与每帖最多几类）、`changelog`（迭代记录）。一册合集里**一卷 = 一篇帖子**，
+原书各章降为小节、图片按笔记 ID 前缀去重、末尾只留一个联系页；验收走 `--collection` 放宽
+单章跨度（合集天然跨页）。新帖进来或类别边界变化时，改配置→重跑 `classify.py`→重跑
+`build_collection.py`，分类总览与合集都会刷新，旧版留在各自日期目录可对比。
+
 ## 联系页与品牌资源
 
 `assets/brand/brand.json` 配文案与三张二维码，改文案、换码只改这个目录，不用碰引擎和书稿：
@@ -85,7 +112,11 @@ assets/brand/
 ```
 xhs-library/                    整体一个包 = 一个 git 仓库
 ├── INDEX.md                    总目录：每本书一行（日期｜书名｜原作者｜标签｜笔记ID｜简介｜位置）
+├── CATEGORIES.md               分类总览：每类收了哪几篇、依据、迭代说明（本地）
+├── categories.json             分类索引（机器读，合集用；本地）
 ├── skill/                      本技能包（随 git 公开）
+├── collections/                主题合集 / 精华全集（本地，不进 git）
+│   └── 2026-11-16_精华全集/
 └── books/                      每本书一个文件夹（只在本地，不进 git）
     └── 2026-11-14_书名_作者/
         ├── 书名.pdf            成品
@@ -99,7 +130,7 @@ xhs-library/                    整体一个包 = 一个 git 仓库
 
 - **命名**：`日期_书名_原作者`，自动清理 Windows 非法字符与 emoji
 - **查重**：按笔记 ID；同笔记再次归档会被拦下并提示旧档位置，重制加 `--v2`（旧版保留）
-- **版权**：`books/` 与 `INDEX.md` 已在 `.gitignore` 里排除——书的内容含他人原创，公开仓库只放工具本身
+- **版权**：`books/`、`INDEX.md`、`CATEGORIES.md`、`categories.json`、`collections/` 已在 `.gitignore` 里排除——书的内容含他人原创，公开仓库只放工具本身
 
 ## 版式
 
@@ -138,11 +169,14 @@ FORMAT.md                       书稿格式语言：四章规范、标记总表
 README.md                       本文件
 templates/book_source_template.txt  四章书稿骨架
 assets/brand/                   品牌资源（brand.json + 三张二维码 + README）
+assets/taxonomy/taxonomy.json   分类体系（类别 / 关键词 / 覆盖 / 版本与迭代记录）
 vendor/book_pdf.py              排版引擎（xhs preset、评论卡、三级气泡、联系页、--density dense）
 scripts/collect_note.py         采集
 scripts/build_book.py           排版（默认 xhs + dense，自动补联系页）
-scripts/verify_book.py          验收（气泡引文 / 矩阵 / 来源 / 内容密度）
+scripts/verify_book.py          验收（气泡引文 / 矩阵 / 来源 / 内容密度 / --collection）
 scripts/shelf.py                书架归档（init/archive/list/check）
+scripts/classify.py             按 taxonomy 归类（CATEGORIES.md / categories.json）
+scripts/build_collection.py     按类别汇编合集（--category/--all/--mega）
 ```
 
 引擎最初来自 [ebook-pdf-maker](../ebook-pdf-maker)，本包已把含小红书版式与联系页的版本 vendor 进来，

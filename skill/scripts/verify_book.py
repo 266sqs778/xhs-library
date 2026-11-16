@@ -113,6 +113,8 @@ def main():
                     help="品牌配置 brand.json")
     ap.add_argument("--no-contact", action="store_true",
                     help="复核历史归档时跳过二维码矩阵检查（正常成书不要用）")
+    ap.add_argument("--collection", action="store_true",
+                    help="合集模式：一卷为一篇帖子、天然跨多页，跳过单章页数跨度硬失败")
     a = ap.parse_args()
 
     doc = pymupdf.open(a.pdf)
@@ -261,12 +263,13 @@ def main():
         note_ratio = note_chars / tot
         talk_ratio = cat["编者议论"] / tot
         meta_ratio = cat["出处说明"] / tot
-        print("   NOTE %.1f%%（上限 8%%）｜编者议论 %.1f%%（上限 15%%）｜出处说明 %.1f%%（上限 35%%）"
-              % (100 * note_ratio, 100 * talk_ratio, 100 * meta_ratio))
+        talk_cap = 0.18 if a.collection else 0.15   # 合集多卷各带来源行，放宽到 18%
+        print("   NOTE %.1f%%（上限 8%%）｜编者议论 %.1f%%（上限 %.0f%%）｜出处说明 %.1f%%（上限 35%%）"
+              % (100 * note_ratio, 100 * talk_ratio, 100 * talk_cap, 100 * meta_ratio))
         if note_ratio > 0.08:
             fails.append("编者注占比 %.1f%% 超过 8%%" % (100 * note_ratio))
-        if talk_ratio > 0.15:
-            fails.append("编者议论占比 %.1f%% 超过 15%%" % (100 * talk_ratio))
+        if talk_ratio > talk_cap:
+            fails.append("编者议论占比 %.1f%% 超过 %.0f%%" % (100 * talk_ratio, 100 * talk_cap))
         if meta_ratio > 0.35:
             fails.append("出处说明占比 %.1f%% 超过 35%%，元信息喧宾夺主" % (100 * meta_ratio))
         if cat["原文"] / tot < 0.35:
@@ -291,8 +294,8 @@ def main():
         spans.append(n)
         print("   %-24s p%d–p%d  %d 页" % (row[1][:24], start, end, n))
     if spans:
-        print("   最大章跨度 %d 页（紧凑版目标 ≤2 页）" % max(spans))
-        if max(spans) > 2:
+        print("   最大章跨度 %d 页（紧凑版目标 ≤2 页，合集模式跳过）" % max(spans))
+        if max(spans) > 2 and not a.collection:
             fails.append("仍有章节跨 %d 页，超出紧凑版 ≤2 页目标" % max(spans))
     body_first = toc[0][2] if toc else 1
     body_pages = [p for i, p in enumerate(pages)

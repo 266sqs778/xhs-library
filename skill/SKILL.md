@@ -1,7 +1,7 @@
 ---
 name: xhs-essence-book
-description: 把小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）采集、精选、汇编成一本内容优先的精华小书 PDF，并自动归档到书架。当用户提供小红书笔记链接/分享文案/xhslink 短链，说「做成小书」「摘录成册」「整理成精华册」「把这条帖子做成 PDF」「评论区也收进去」时使用。每本书末尾自带作者联系二维码矩阵（模因公社 / Re.Crescent Pisces / 九紫离火运），支持小红书风格排版、逐字照录与图版文字转录。
-version: 2.2.0
+description: 把小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）采集、精选、汇编成一本内容优先的精华小书 PDF，自动归档到书架，并按可迭代的分类体系把多帖聚成主题合集。当用户提供小红书笔记链接/分享文案/xhslink 短链，说「做成小书」「摘录成册」「整理成精华册」「把这条帖子做成 PDF」「评论区也收进去」时使用；也说「把这些帖子分类」「按主题汇编合集」「出一本精选全集」。每本书/合集末尾自带联系二维码矩阵（模因公社 / Re.Crescent Pisces / 九紫离火运），支持小红书风格排版、逐字照录与图版文字转录。
+version: 2.3.0
 ---
 
 # 小红书精华小书
@@ -15,7 +15,8 @@ version: 2.2.0
 
 - 用户丢来小红书笔记链接 / 分享文案 / `xhslink.com` 或 `xhslink.cn` 短链，想把内容留成册子；
 - 用户想把刷到的若干篇同主题帖子汇成一本合集；
-- 用户强调「评论区也要」「图里的字也要」「要像小红书那样排版」。
+- 用户强调「评论区也要」「图里的字也要」「要像小红书那样排版」；
+- 用户想把书架里的帖子**分类**、按类别汇编合集，且分类规则要能随情况持续迭代。
 
 ## 依赖
 
@@ -150,7 +151,48 @@ python scripts/shelf.py list
 书架根目录默认 `C:\Users\无相道一\WorkBuddy\xhs-library\`（`--root` 可改）：
 `INDEX.md` 总目录 + `skill/` 工具包 + `books/日期_书名_作者/` 每本全套归档。
 同一笔记再次 archive 会被拦下；重制加 `--v2`（旧版保留）。
-**`books/` 与 `INDEX.md` 只在本地，不进公开仓库**——书的内容含他人原创。
+**`books/`、`INDEX.md`、`CATEGORIES.md`、`categories.json`、`collections/` 只在本地，不进公开仓库**——书的内容含他人原创。
+
+## 分类与主题合集（v2.3）
+
+单帖成书之后，还能把书架里的帖子按主题归类、把同类聚成一本合集。这套机制**配置驱动、可反复迭代**，
+不是一次性写死的分类。
+
+### 分类体系：`assets/taxonomy/taxonomy.json`
+
+- `categories`：每个类别的 `id / name / desc / keywords / title_extra`；自动归类按标题、标签、简介、作者命中关键词打分。
+- `overrides`：按笔记 ID 人工指定类别（字符串或数组），**优先级最高**；`[]` 表示不归类。
+- `match`：`fields`、`min_score`、`max_labels`（默认每帖最多 2 类）、`primary_is_first`。
+- `version` / `updated` / `changelog`：**每次改动都要追加一条 changelog 并把 version 递增**，这是迭代留痕。
+
+### 归类：`classify.py`
+
+```bash
+python scripts/classify.py --explain        # 打印每篇归类依据
+```
+
+读 `INDEX.md`（按笔记 ID 去重、同一帖取最新版本为代表）+ 分类配置，产出：
+`CATEGORIES.md`（人读分类总览：每类收了哪几篇、依据、迭代说明）与 `categories.json`（机器索引，合集用）。
+
+### 合集成书：`build_collection.py`
+
+```bash
+python scripts/build_collection.py --category attention-energy   # 某类一册
+python scripts/build_collection.py --all                         # 每类各一册
+python scripts/build_collection.py --mega                        # 全类别聚成一册「精华全集」
+python scripts/build_collection.py --mega --dry-run              # 只看会收哪些卷
+```
+
+结构：**一卷 = 一篇帖子**；原书各章降为 `@@H2` 小节；每卷前加 `@@CAP` 来源行；
+图片按笔记 ID 前缀重命名避免重名；末尾一个统一的「本集说明与出处」+ 一个 `@@CONTACT` 联系页。
+语料合并成一个 `merged_note_data.json` 供逐字比对；验收加 `--collection` 放宽单章页数跨度
+（一卷本就跨多页）与编者议论上限（多卷各带来源行）。产物在 `collections/日期_类名/`，本地私有。
+
+### 迭代闭环
+
+新帖进来、或发现某类边界不清时：改 `taxonomy.json`（加词 / 改 overrides / 加减类别）
+→ changelog 追加一行、version 递增 → 重跑 `classify.py` → 重跑 `build_collection.py`。
+分类总览与合集都会刷新，旧版合集留在各自日期目录里，可对比。工具改动同步到两个公开仓库后即完成一次迭代。
 
 ## 书稿标记速查
 
@@ -178,6 +220,9 @@ python scripts/shelf.py list
     出书后必须渲染全页样张核对：无整页空白、无卡片孤零零跨页、尾页就是二维码矩阵。
 11. **对话按楼分区**：有回复关系就做 `@@CHAT0/1/2` 气泡，讨论串不跨页；拿不到关系就保守分层并说明，
     不臆造楼层。气泡来源行必须写清「谁说的 / 什么关系 / 多少赞」，缺数据留白不写占位。
+12. **分类可迭代、留版本**：分类规则只在 `taxonomy.json` 维护，改一次就追加 changelog 并递增 version；
+    归类与合集都从配置重跑生成，不手改 `CATEGORIES.md` / 合集书稿。合集里一卷一篇、图片按笔记 ID 前缀去重，
+    只留一个联系页；合集内容同样只在本地，不进公开仓库。
 
 ## 目录
 
@@ -188,10 +233,13 @@ xhs-essence-book/
 ├── README.md                         安装与仓库说明
 ├── templates/book_source_template.txt 四章书稿骨架
 ├── assets/brand/                     品牌资源：brand.json + 三张二维码 + README
+├── assets/taxonomy/taxonomy.json     分类体系（类别 / 关键词 / 覆盖 / 版本与迭代记录）
 ├── vendor/book_pdf.py                排版引擎（xhs preset、评论卡、三级气泡、联系页、--density dense）
 └── scripts/
     ├── collect_note.py               采集（SSR 解析 + 图片落地 + 评论导出）
     ├── build_book.py                 排版（默认 xhs + dense，自动补 @@CONTACT）
-    ├── verify_book.py                验收（含矩阵、来源、内容密度）
-    └── shelf.py                      书架归档（init/archive/list/check）
+    ├── verify_book.py                验收（含矩阵、来源、内容密度、--collection 合集模式）
+    ├── shelf.py                      书架归档（init/archive/list/check）
+    ├── classify.py                   按 taxonomy 归类（产出 CATEGORIES.md / categories.json）
+    └── build_collection.py           按类别汇编主题合集（--category/--all/--mega）
 ```
