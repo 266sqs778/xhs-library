@@ -2,7 +2,7 @@
 
 把一条小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）编成一本**内容优先**的 PDF 摘录，并归档进书架。
 
-> 本 Skill 名为「小红书精华神帖摘录」，`xhs-essence-book` 是技术标识（安装目录与公开仓库名），两者指同一个技能。
+> 本 Skill 名为「小红书精华神帖摘录」，`xhs-essence-excerpts` 是技术标识（安装目录与公开仓库名），两者指同一个技能。
 
 - **采集**：公开分享页的移动端 SSR 数据，不登录、不调第三方付费接口
 - **精选**：原文照录 + 评论卡（自带来源）+ 三级对话气泡（主楼 / 回楼主 / 子子楼）+ 金句（句句署名）
@@ -20,8 +20,8 @@
 
 | 范围 | 路径 |
 |---|---|
-| 用户级（所有项目可用） | `~/.workbuddy/skills/xhs-essence-book/` |
-| 项目级 | `<项目>/.workbuddy/skills/xhs-essence-book/` |
+| 用户级（所有项目可用） | `~/.workbuddy/skills/xhs-essence-excerpts/` |
+| 项目级 | `<项目>/.workbuddy/skills/xhs-essence-excerpts/` |
 
 依赖：
 

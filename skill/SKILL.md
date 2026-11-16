@@ -1,12 +1,12 @@
 ---
-name: xhs-essence-book
+name: xhs-essence-excerpts
 description: 「小红书精华神帖摘录」：把小红书帖子（图文、正文、作者回复、评论区高含金量内容、图片里的文字）采集、精选、汇编成一本内容优先的 PDF 摘录，自动归档到书架，并按可迭代的分类体系把多帖聚成主题合集。当用户提供小红书笔记链接/分享文案/xhslink 短链，说「做成小书」「神帖摘录」「精华摘录」「摘录成册」「整理成精华册」「把这条帖子做成 PDF」「评论区也收进去」时使用；也说「把这些帖子分类」「按主题汇编合集」「出一本精选全集」。每本书/合集末尾自带联系二维码矩阵（模因公社 / Re.Crescent Pisces / 九紫离火运），支持小红书风格排版、逐字照录与图版文字转录。
 version: 2.3.0
 ---
 
 # 小红书精华神帖摘录
 
-> 本 Skill 名为「小红书精华神帖摘录」，`name: xhs-essence-book` 是技术标识（安装目录与公开仓库名），两者指同一个技能。
+> 本 Skill 名为「小红书精华神帖摘录」，`name: xhs-essence-excerpts` 是技术标识（安装目录与公开仓库名），两者指同一个技能。
 
 一条链接进，一本摘录出：**查重 → 采集 → 读图 → 精选 → 成稿 → 排版 → 验收 → 归档**。
 
@@ -229,7 +229,7 @@ python scripts/build_collection.py --mega --dry-run              # 只看会收�
 ## 目录
 
 ```
-xhs-essence-book/
+xhs-essence-excerpts/
 ├── SKILL.md                          本文件
 ├── FORMAT.md                         书稿格式语言（标记、四章规范、硬上限、验收清单）
 ├── README.md                         安装与仓库说明
